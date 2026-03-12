@@ -128,7 +128,7 @@ class ClassExtender(object):
         self.set_filter("RCONFLICTS", deps=True)
         self.set_filter("PKG", deps=True)
 
-    def rename_package_variables(self, variables):
+    def rename_package_variables(self, variables, overwrite=True):
         pkgs_mapping = get_package_mappings(self.d.getVar('PACKAGES'), self.extname)
         self.d.setVarFilter('PACKAGES', "package_suffix_filter(val, '" + self.extname + "')")
         self.d.setVarFilter('PACKAGES_DYNAMIC', "suffix_filter_regex(val, '" + self.extname + "', " + str(self.prefixes) + ")")
@@ -137,4 +137,5 @@ class ClassExtender(object):
             if pkg_mapping[0].startswith("${") and pkg_mapping[0].endswith("}"):
                 continue
             for subs in variables:
-                self.d.renameVar("%s:%s" % (subs, pkg_mapping[0]), "%s:%s" % (subs, pkg_mapping[1]))
+                if overwrite or not self.d.getVar("%s:%s" % (subs, pkg_mapping[1])):
+                    self.d.renameVar("%s:%s" % (subs, pkg_mapping[0]), "%s:%s" % (subs, pkg_mapping[1]))

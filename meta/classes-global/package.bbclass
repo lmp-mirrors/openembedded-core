@@ -169,6 +169,7 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
 
     for o in sorted(objs):
         import re, stat
+        import oe.package
         if match_path:
             m = re.match(file_regex, o)
         else:
@@ -225,6 +226,16 @@ def do_split_packages(d, root, file_regex, output_pattern, description, postinst
             hook(f, pkg, file_regex, output_pattern, m.group(1))
 
     d.setVar('PACKAGES', ' '.join(packages))
+
+    variant = d.getVar("BBEXTENDVARIANT")
+    prefixes = (d.getVar("MULTILIB_VARIANTS") or "").split()
+    if variant and prefixes:
+        import oe.classextend
+
+        # Extend package variables for the given variant if unset
+        clsextend = oe.classextend.ClassExtender(variant, prefixes, d)
+        clsextend.rename_package_variables((d.getVar("PACKAGEVARS") or "").split(), overwrite=False)
+
     return list(split_packages)
 
 PACKAGE_DEPENDS += "file-native"
