@@ -122,6 +122,9 @@ SRC_URI[data.sha256sum] = "582968cf174c9498b2046b4f4e7f786def5f18222bd8d98432d7a
 UPSTREAM_CHECK_REGEX = "releases/tag/release-(?P<pver>(?!.+rc).+)"
 GITHUB_BASE_URI = "https://github.com/unicode-org/icu/releases"
 
+# The file source/test/cintltst/udatatst.c contains the string "/build/tmp/.."
+INSANE_SKIP:${PN}-src += "${@'buildpaths' if d.getVar('TMPDIR') == '/build/tmp' else ''}"
+
 EXTRA_OECONF:append:libc-musl = " ac_cv_func_strtod_l=no"
 
 PACKAGECONFIG ?= ""
