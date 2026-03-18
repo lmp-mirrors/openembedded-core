@@ -142,6 +142,42 @@ def test(root, patch, extra_args=None):
 
     return results
 
+def test_error_on_failure(root, patch):
+    try:
+        output = test(root, patch, "--error-on-failure")
+        return output, 0
+    except subprocess.CalledProcessError as e:
+        return e.output, e.returncode
+
+def test_returncode(patches, counts):
+
+    for target in ("FAIL", "PASS", "SKIP"):
+        for patch_info in patches:
+
+            testid = patch_info["testid"]
+            expected = str(patch_info["expected"]).upper()
+
+            if expected == target:
+                results, returncode = test_error_on_failure(
+                    patch_info["root"], patch_info["patch"]
+                )
+
+                if target == "FAIL" and returncode != 0:
+                    print("XFAIL: test_returncode.%s (file: %s)" % (testid.strip("."), os.path.basename(patch_info["patch"])))
+                    counts["xfail"] = counts["xfail"] + 1
+                elif target == "PASS" and returncode == 0:
+                    counts["xpass"] = counts["xpass"] + 1
+                    print("XPASS: test_returncode.%s (file: %s)" % (testid.strip("."), os.path.basename(patch_info["patch"])))
+                elif target == "SKIP" and returncode == 0:
+                    counts["xskip"] = counts["xskip"] + 1
+                    print("XSKIP: test_returncode.%s (file: %s)" % (testid.strip("."), os.path.basename(patch_info["patch"])))
+                else:
+                    print(f"Test failed: target '{target}', expected return code '{expected}', got '{returncode}'")
+
+                break
+
+    return counts
+
 def test_head_attached(patches, counts, branch):
 
     git_attach_head(branch)
@@ -178,6 +214,7 @@ def run_tests(patches, counts):
     counts = test_head_detached(patches, counts)
     restore_git_state(git_state)
     run_sh(f"git branch -D {temp_branch}")
+    counts = test_returncode(patches, counts)
 
     return counts
 
