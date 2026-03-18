@@ -73,6 +73,9 @@ class PatchtestParser(object):
                             action='store_true', 
                             help='Enable logging to a file matching the target patch name with ".testresult" appended')
 
+        parser.add_argument('--error-on-failure',
+                            action='store_true',
+                            help='Return non-zero exit status if a test fails')
 
         return parser
 
