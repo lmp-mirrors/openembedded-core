@@ -130,11 +130,14 @@ def git_detach_head():
     return get_git_state()
 
 # Once the tests are in oe-core, we can remove the testdir param and use os.path.dirname to get relative paths
-def test(root, patch):
+def test(root, patch, extra_args=None):
     res = True
     patchpath = os.path.abspath(os.path.join(root, patch))
     
     cmd     = 'patchtest --base-commit HEAD --repodir %s --testdir %s/tests --patch %s' % (repodir, topdir, patchpath)
+    if extra_args:
+        cmd += " " + extra_args
+
     results = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True, shell=True)
 
     return results
