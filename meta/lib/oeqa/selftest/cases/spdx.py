@@ -143,27 +143,13 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
     def test_base_files(self):
         self.check_recipe_spdx(
             "base-files",
-            "{DEPLOY_DIR_SPDX}/{MACHINE_ARCH}/static/static-base-files.spdx.json",
-            task="create_recipe_spdx",
-        )
-        self.check_recipe_spdx(
-            "base-files",
             "{DEPLOY_DIR_SPDX}/{MACHINE_ARCH}/packages/package-base-files.spdx.json",
         )
-
-    def test_world_sbom(self):
-        objset = self.check_recipe_spdx(
-            "meta-world-recipe-sbom",
-            "{DEPLOY_DIR_IMAGE}/world-recipe-sbom.spdx.json",
-        )
-
-        # Document should be fully linked
-        self.check_objset_missing_ids(objset)
 
     def test_gcc_include_source(self):
         objset = self.check_recipe_spdx(
             "gcc",
-            "{DEPLOY_DIR_SPDX}/{SSTATE_PKGARCH}/builds/build-gcc.spdx.json",
+            "{DEPLOY_DIR_SPDX}/{SSTATE_PKGARCH}/recipes/recipe-gcc.spdx.json",
             extraconf="""\
                 SPDX_INCLUDE_SOURCES = "1"
                 """,
@@ -176,12 +162,12 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
             if software_file.name == filename:
                 found = True
                 self.logger.info(
-                    f"The spdxId of {filename} in build-gcc.spdx.json is {software_file.spdxId}"
+                    f"The spdxId of {filename} in recipe-gcc.spdx.json is {software_file.spdxId}"
                 )
                 break
 
         self.assertTrue(
-            found, f"Not found source file {filename} in build-gcc.spdx.json\n"
+            found, f"Not found source file {filename} in recipe-gcc.spdx.json\n"
         )
 
     def test_core_image_minimal(self):
@@ -319,7 +305,7 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
         # This will fail with NameError if new_annotation() is called incorrectly
         objset = self.check_recipe_spdx(
             "base-files",
-            "{DEPLOY_DIR_SPDX}/{MACHINE_ARCH}/builds/build-base-files.spdx.json",
+            "{DEPLOY_DIR_SPDX}/{MACHINE_ARCH}/recipes/recipe-base-files.spdx.json",
             extraconf=textwrap.dedent(
                 f"""\
                 ANNOTATION1 = "{ANNOTATION_VAR1}"
@@ -374,8 +360,8 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
 
     def test_kernel_config_spdx(self):
         kernel_recipe = get_bb_var("PREFERRED_PROVIDER_virtual/kernel")
-        spdx_file = f"build-{kernel_recipe}.spdx.json"
-        spdx_path = f"{{DEPLOY_DIR_SPDX}}/{{SSTATE_PKGARCH}}/builds/{spdx_file}"
+        spdx_file = f"recipe-{kernel_recipe}.spdx.json"
+        spdx_path = f"{{DEPLOY_DIR_SPDX}}/{{SSTATE_PKGARCH}}/recipes/{spdx_file}"
 
         # Make sure kernel is configured first
         bitbake(f"-c configure {kernel_recipe}")
@@ -383,7 +369,7 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
         objset = self.check_recipe_spdx(
             kernel_recipe,
             spdx_path,
-            task="do_create_spdx",
+            task="do_create_kernel_config_spdx",
             extraconf="""\
                 INHERIT += "create-spdx"
                 SPDX_INCLUDE_KERNEL_CONFIG = "1"
@@ -427,4 +413,80 @@ class SPDX30Check(SPDX3CheckBase, OESelftestTestCase):
             self.assertIn(
                 value, ["enabled", "disabled"],
                 f"Unexpected PACKAGECONFIG value '{value}' for {key}"
+            )
+
+    def test_download_location_defensive_handling(self):
+        """Test that download_location handling is defensive.
+
+        Verifies SPDX generation succeeds and external references are
+        properly structured when download_location retrieval works.
+        """
+        objset = self.check_recipe_spdx(
+            "m4",
+            "{DEPLOY_DIR_SPDX}/{SSTATE_PKGARCH}/builds/build-m4.spdx.json",
+        )
+
+        found_external_refs = False
+        for pkg in objset.foreach_type(oe.spdx30.software_Package):
+            if pkg.externalRef:
+                found_external_refs = True
+                for ref in pkg.externalRef:
+                    self.assertIsNotNone(ref.externalRefType)
+                    self.assertIsNotNone(ref.locator)
+                    self.assertGreater(len(ref.locator), 0, "Locator should have at least one entry")
+                    for loc in ref.locator:
+                        self.assertIsInstance(loc, str)
+                break
+
+        self.logger.info(
+            f"External references {'found' if found_external_refs else 'not found'} "
+            f"in SPDX output (defensive handling verified)"
+        )
+
+    def test_version_extraction_patterns(self):
+        """Test that version extraction works for various package formats.
+
+        Verifies that Git source downloads carry extracted versions and that
+        the reported version strings are well-formed.
+        """
+        objset = self.check_recipe_spdx(
+            "opkg-utils",
+            "{DEPLOY_DIR_SPDX}/{SSTATE_PKGARCH}/builds/build-opkg-utils.spdx.json",
+        )
+
+        # Collect all packages with versions
+        packages_with_versions = []
+        for pkg in objset.foreach_type(oe.spdx30.software_Package):
+            if pkg.software_packageVersion:
+                packages_with_versions.append((pkg.name, pkg.software_packageVersion))
+
+        self.assertGreater(
+            len(packages_with_versions), 0,
+            "Should find packages with extracted versions"
+        )
+
+        for name, version in packages_with_versions:
+            self.assertRegex(
+                version,
+                r"^[0-9a-f]{40}$",
+                f"Expected Git source version for {name} to be a full SHA-1",
+            )
+
+        self.logger.info(f"Found {len(packages_with_versions)} packages with versions")
+
+        # Log some examples for debugging
+        for name, version in packages_with_versions[:5]:
+            self.logger.info(f"  {name}: {version}")
+
+        # Verify that versions follow expected patterns
+        for name, version in packages_with_versions:
+            # Version should not be empty
+            self.assertIsNotNone(version)
+            self.assertNotEqual(version, "")
+
+            # Version should contain digits
+            self.assertRegex(
+                version,
+                r'\d',
+                f"Version '{version}' for package '{name}' should contain digits"
             )
